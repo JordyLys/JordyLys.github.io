@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pièce 3D visitable</title>
+  <meta name="description" content="Projet 7 : une pièce en réalité virtuelle à visiter dans le navigateur, avec A-Frame.">
+
+  <!--
+    PROJET 7 : PIÈCE 3D VISITABLE (A-Frame)
+    ----------------------------------------
+    Un seul fichier. Pour le publier : mets-le dans un dossier de ton dépôt GitHub Pages
+    (par exemple projets/piece-3d/index.html), puis fais add, commit, push.
+
+    Si la scène reste noire, vérifie que la version d'A-Frame ci-dessous existe
+    encore sur aframe.io, et remplace le numéro si besoin.
+  -->
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+
+  <style>
+    /* Texte d'aide en haut de l'écran (HTML classique, par-dessus la scène 3D) */
+    #aide {
+      position: fixed; top: 10px; left: 10px; right: 10px; max-width: 430px;
+      padding: 8px 12px; border-radius: 8px; z-index: 10; pointer-events: none;
+      background: rgba(20, 22, 50, 0.78); color: #fff;
+      font: 14px/1.45 system-ui, sans-serif;
+    }
+    /* Panneau d'information qui apparaît quand on clique sur un objet */
+    #info-html {
+      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+      width: calc(100% - 40px); max-width: 480px; padding: 10px 14px;
+      border-radius: 8px; z-index: 10; pointer-events: none; text-align: center;
+      background: rgba(15, 124, 124, 0.92); color: #fff;
+      font: 15px/1.4 system-ui, sans-serif; display: none;
+    }
+  </style>
+
+  <script>
+    // ------------------------------------------------------------------
+    // Un COMPOSANT A-Frame, c'est un petit morceau de JavaScript réutilisable
+    // qu'on branche sur n'importe quel objet de la scène, comme un attribut HTML.
+    // ------------------------------------------------------------------
+
+    // Enlève les accents : la police 3D par défaut d'A-Frame les affiche mal.
+    function sansAccents(texte) {
+      return texte.normalize('NFD').replace(/[̀-ͯ]/g, '');
+    }
+
+    // 1) aller-au-clic : cliquer sur le sol (ou sur une pastille) déplace le visiteur.
+    AFRAME.registerComponent('aller-au-clic', {
+      schema: {
+        cible: { type: 'selector' },   // l'entité qu'on déplace (le "rig" du visiteur)
+        limite: { default: 3.4 },      // demi-largeur de la pièce accessible
+        pastille: { default: false }   // true : on va à la position de l'objet lui-même
+      },
+      init: function () {
+        var data = this.data;
+        var el = this.el;
+        el.addEventListener('click', function (evt) {
+          var x, z;
+          if (data.pastille) {
+            x = el.object3D.position.x;
+            z = el.object3D.position.z;
+          } else {
+            var point = evt.detail.intersection.point; // où le clic a touché le sol
+            x = point.x;
+            z = point.z;
+          }
+          x = Math.max(-data.limite, Math.min(data.limite, x));
+          z = Math.max(-data.limite, Math.min(data.limite, z));
+          data.cible.object3D.position.set(x, 0, z);
+        });
+      }
+    });
+
+    // 2) objet-info : cliquer sur un objet change sa couleur et affiche une explication.
+    AFRAME.registerComponent('objet-info', {
+      schema: {
+        titre: { type: 'string' },
+        texte: { type: 'string' }
+      },
+      init: function () {
+        var el = this.el;
+        var data = this.data;
+        el.addEventListener('click', function () {
+          // Couleur aléatoire (teinte de 0 à 359)
+          var teinte = Math.floor(Math.random() * 360);
+          el.setAttribute('color', 'hsl(' + teinte + ', 70%, 55%)');
+
+          // Affichage dans la scène 3D (visible aussi en mode casque)
+          var message = data.titre + '\n' + data.texte;
+          document.querySelector('#info-3d').setAttribute('text', 'value', sansAccents(message));
+
+          // Affichage en HTML (écran normal)
+          var panneau = document.querySelector('#info-html');
+          panneau.textContent = data.titre + ' : ' + data.texte;
+          panneau.style.display = 'block';
+        });
+      }
+    });
+
+    // 3) garde-fou : empêche de traverser les murs quand on marche au clavier.
+    //    La fonction "tick" est appelée à chaque image affichée.
+    AFRAME.registerComponent('garde-fou', {
+      schema: { limite: { default: 3.6 } },
+      tick: function () {
+        var p = this.el.object3D.position;
+        var l = this.data.limite;
+        p.x = Math.max(-l, Math.min(l, p.x));
+        p.z = Math.max(-l, Math.min(l, p.z));
+      }
+    });
+
+    // 4) regard-en-vr : le curseur "regard" (on fixe un objet pour cliquer)
+    //    s'active uniquement quand on passe en mode casque / stéréo.
+    AFRAME.registerComponent('regard-en-vr', {
+      init: function () {
+        var el = this.el;
+        var scene = el.sceneEl;
+        scene.addEventListener('enter-vr', function () {
+          el.setAttribute('visible', true);
+          el.setAttribute('raycaster', 'enabled', true);
+        });
+        scene.addEventListener('exit-vr', function () {
+          el.setAttribute('visible', false);
+          el.setAttribute('raycaster', 'enabled', false);
+        });
+      }
+    });
+  </script>
+</head>
+
+<body>
+  <div id="aide">
+    <b>Visite la pièce.</b> Touche ou clique sur le sol pour te déplacer, sur les objets pour les découvrir.
+    Sur ordinateur : clavier ZQSD ou WASD, souris pour regarder.
+    Sur téléphone : tourne-toi ou glisse le doigt. Le bouton en bas à droite lance le mode stéréo.
+  </div>
+  <div id="info-html"></div>
+
+  <a-scene background="color: #101426" renderer="antialias: true">
+
+    <!-- ============ LUMIÈRES ============ -->
+    <a-light type="ambient" intensity="0.7"></a-light>
+    <a-light type="directional" position="1 3 2" intensity="0.8"></a-light>
+
+    <!-- ============ LA PIÈCE : 8 m x 8 m, hauteur 3 m ============ -->
+    <!-- Sol (cliquable pour se déplacer) -->
+    <a-plane class="clickable" aller-au-clic="cible: #rig"
+             position="0 0 0" rotation="-90 0 0" width="8" height="8" color="#8b6f4e"></a-plane>
+
+    <!-- Plafond -->
+    <a-plane position="0 3 0" rotation="90 0 0" width="8" height="8" color="#ffffff"></a-plane>
+
+    <!-- Quatre murs (side: double = visible des deux côtés) -->
+    <a-plane position="0 1.5 -4" width="8" height="3" color="#f2ead3" material="side: double"></a-plane>
+    <a-plane position="0 1.5 4" rotation="0 180 0" width="8" height="3" color="#f2ead3" material="side: double"></a-plane>
+    <a-plane position="-4 1.5 0" rotation="0 90 0" width="8" height="3" color="#ece2c6" material="side: double"></a-plane>
+    <a-plane position="4 1.5 0" rotation="0 -90 0" width="8" height="3" color="#ece2c6" material="side: double"></a-plane>
+
+    <!-- Plinthe décorative au pied du mur du fond -->
+    <a-box position="0 0.08 -3.95" width="8" height="0.16" depth="0.1" color="#5b3a29"></a-box>
+
+    <!-- Titre de la salle (affiché sur le mur du fond) -->
+    <a-text value="Salle d'exposition" position="0 2.5 -3.95" align="center" width="6" color="#2b2d6e"></a-text>
+
+    <!-- ============ LA TABLE ============ -->
+    <a-box position="0 0.8 -2.5" width="2.4" height="0.08" depth="1" color="#5b3a29"></a-box>
+    <a-cylinder position="-1.05 0.38 -2.2" radius="0.05" height="0.76" color="#3e2719"></a-cylinder>
+    <a-cylinder position="1.05 0.38 -2.2" radius="0.05" height="0.76" color="#3e2719"></a-cylinder>
+    <a-cylinder position="-1.05 0.38 -2.8" radius="0.05" height="0.76" color="#3e2719"></a-cylinder>
+    <a-cylinder position="1.05 0.38 -2.8" radius="0.05" height="0.76" color="#3e2719"></a-cylinder>
+
+    <!-- ============ OBJETS CLIQUABLES SUR LA TABLE ============ -->
+    <a-sphere class="clickable objet" position="-0.7 1.07 -2.5" radius="0.2" color="#e4572e"
+              objet-info="titre: La sphère; texte: Une forme de base, définie par son rayon."></a-sphere>
+
+    <a-cone class="clickable objet" position="0 1.12 -2.5" radius-bottom="0.2" radius-top="0" height="0.3" color="#29a19c"
+            objet-info="titre: Le cône; texte: Défini par deux rayons et une hauteur."></a-cone>
+
+    <a-cylinder class="clickable objet" position="0.7 1.1 -2.5" radius="0.15" height="0.26" color="#f3a712"
+                objet-info="titre: Le cylindre; texte: Un rayon et une hauteur suffisent."></a-cylinder>
+
+    <!-- ============ SOCLE AVEC UNE FORME QUI TOURNE ============ -->
+    <a-cylinder position="-2.6 0.4 -1.2" radius="0.4" height="0.8" color="#bfc4d6"></a-cylinder>
+    <a-torus-knot class="clickable objet" position="-2.6 1.3 -1.2" radius="0.22" radius-tubular="0.06" color="#7b4bb7"
+                  animation="property: rotation; to: 0 360 0; loop: true; dur: 8000; easing: linear"
+                  objet-info="titre: Le noeud torique; texte: Une forme plus complexe, qui tourne grâce à une animation."></a-torus-knot>
+
+    <!-- ============ UN TABLEAU SUR LE MUR DE DROITE ============ -->
+    <a-box position="3.95 1.7 0" width="0.05" height="1.3" depth="1.9" color="#3e2719"></a-box>
+    <a-plane class="clickable objet" position="3.91 1.7 0" rotation="0 -90 0" width="1.7" height="1.1" color="#4b8fd6"
+             objet-info="titre: Le tableau; texte: Un simple plan coloré, comme une affiche sur un mur."></a-plane>
+
+    <!-- ============ PASTILLES DE DÉPLACEMENT (utiles en mode stéréo) ============ -->
+    <a-cylinder class="clickable objet" position="-2.5 0.02 2" radius="0.3" height="0.04" color="#00a3a3"
+                aller-au-clic="cible: #rig; pastille: true"></a-cylinder>
+    <a-cylinder class="clickable objet" position="2.5 0.02 2" radius="0.3" height="0.04" color="#00a3a3"
+                aller-au-clic="cible: #rig; pastille: true"></a-cylinder>
+    <a-cylinder class="clickable objet" position="-2.5 0.02 -0.5" radius="0.3" height="0.04" color="#00a3a3"
+                aller-au-clic="cible: #rig; pastille: true"></a-cylinder>
+    <a-cylinder class="clickable objet" position="2.5 0.02 -0.5" radius="0.3" height="0.04" color="#00a3a3"
+                aller-au-clic="cible: #rig; pastille: true"></a-cylinder>
+    <a-cylinder class="clickable objet" position="0 0.02 3" radius="0.3" height="0.04" color="#00a3a3"
+                aller-au-clic="cible: #rig; pastille: true"></a-cylinder>
+
+    <!-- ============ LE VISITEUR ============ -->
+    <!-- "rig" = le corps du visiteur (c'est lui qu'on déplace). La caméra = ses yeux, à 1,6 m. -->
+    <a-entity id="rig" position="0 0 3" wasd-controls="acceleration: 25" garde-fou>
+      <a-entity id="camera" camera position="0 1.6 0" look-controls>
+
+        <!-- Curseur "regard" : actif seulement en mode stéréo (fixer un objet 1,5 s = cliquer) -->
+        <a-entity regard-en-vr visible="false"
+                  cursor="fuse: true; fuseTimeout: 1500"
+                  raycaster="objects: .objet; enabled: false"
+                  position="0 0 -1"
+                  geometry="primitive: ring; radiusInner: 0.012; radiusOuter: 0.022"
+                  material="color: #ffffff; shader: flat"></a-entity>
+
+        <!-- Texte d'information qui suit le regard (visible aussi en mode casque) -->
+        <a-text id="info-3d" value="" align="center" width="1.3" wrap-count="28"
+                color="#ffffff" position="0 -0.4 -1"></a-text>
+      </a-entity>
+    </a-entity>
+
+    <!-- Curseur souris / doigt : les clics et les touchers sur les objets ".clickable" -->
+    <a-entity cursor="rayOrigin: mouse" raycaster="objects: .clickable"></a-entity>
+
+  </a-scene>
+</body>
+</html>
